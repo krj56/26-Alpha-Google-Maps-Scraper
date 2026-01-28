@@ -187,6 +187,117 @@ class GoogleMapsReviewScraper:
         except Exception as e:
             return None, f"Exception getting URL: {str(e)}"
 
+    def search_businesses(self, query, max_results=20, location=None, radius=None):
+        """
+        Search Google Maps for businesses matching a query.
+
+        Args:
+            query: Search query (e.g., "dentists" or "dentists in Austin TX")
+            max_results: Maximum number of results to return
+            location: Tuple of (latitude, longitude) for location-based search
+            radius: Search radius in meters (used with location)
+
+        Returns:
+            list: List of business dictionaries
+        """
+        businesses = []
+        url = f"{self.base_url}:searchText"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.googleMapsUri,nextPageToken"
+        }
+
+        data = {"textQuery": query, "pageSize": min(max_results, 20)}
+
+        # Add location bias if coordinates provided
+        if location and radius:
+            lat, lng = location
+            data["locationBias"] = {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": radius
+                }
+            }
+
+        print(f"\nSearching for: {query}")
+        if location:
+            radius_miles = radius / 1609.34 if radius else 0
+            print(f"Location: {location[0]}, {location[1]} (radius: {radius_miles:.1f} miles)")
+        print(f"Max results: {max_results}")
+
+        while len(businesses) < max_results:
+            time.sleep(Config.REQUEST_DELAY)
+            response = requests.post(url, json=data, headers=headers)
+            result = response.json()
+
+            if response.status_code != 200:
+                error_msg = result.get('error', {}).get('message', f"HTTP {response.status_code}")
+                print(f"API error: {error_msg}")
+                break
+
+            if 'places' not in result:
+                if len(businesses) == 0:
+                    print("No businesses found for this search.")
+                break
+
+            for place in result['places']:
+                businesses.append({
+                    'Company Name': place.get('displayName', {}).get('text', ''),
+                    'Company Address': place.get('formattedAddress', ''),
+                    'Phone Number': place.get('nationalPhoneNumber', ''),
+                    'Website': place.get('websiteUri', ''),
+                    'Google Review Rating': place.get('rating'),
+                    'Google Review Count': place.get('userRatingCount'),
+                    'Google Maps URL': place.get('googleMapsUri', '')
+                })
+                if len(businesses) >= max_results:
+                    break
+
+            print(f"  Found {len(businesses)} businesses so far...")
+
+            # Handle pagination
+            if 'nextPageToken' not in result or len(businesses) >= max_results:
+                break
+            data['pageToken'] = result['nextPageToken']
+
+        return businesses
+
+    def process_search(self, query, output_path, max_results=20, append=False, location=None, radius=None):
+        """
+        Search Google Maps and save results to CSV.
+
+        Args:
+            query: Search query
+            output_path: Path to output CSV file
+            max_results: Maximum results to fetch
+            append: If True, append to existing file
+            location: Tuple of (latitude, longitude) for location-based search
+            radius: Search radius in meters
+        """
+        businesses = self.search_businesses(query, max_results, location, radius)
+
+        if not businesses:
+            return
+
+        df = pd.DataFrame(businesses)
+
+        # Handle append mode
+        if append and Path(output_path).exists():
+            existing_df = pd.read_csv(output_path)
+            # Deduplicate by Google Maps URL
+            existing_urls = set(existing_df['Google Maps URL'].dropna())
+            new_df = df[~df['Google Maps URL'].isin(existing_urls)]
+            new_count = len(new_df)
+            df = pd.concat([existing_df, new_df], ignore_index=True)
+            print(f"\nAppending {new_count} new businesses to existing {len(existing_df)} rows")
+        else:
+            print(f"\nFound {len(businesses)} businesses")
+
+        df.to_csv(output_path, index=False)
+        print(f"Saved to: {output_path}")
+        print(f"Total rows in file: {len(df)}")
+
     def process_csv(self, input_path, output_path):
         """
         Process CSV file and enrich with Google Maps review data.
@@ -349,39 +460,90 @@ class GoogleMapsReviewScraper:
 def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(
-        description='Enrich business leads with Google Maps review data',
+        description='Google Maps Business Scraper - Enrich leads or search for businesses',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s input.csv output.csv
-  %(prog)s leads.csv enriched_leads.csv
+  # Enrich existing CSV with Google Maps data
+  %(prog)s enrich input.csv output.csv
 
-Requirements:
-  - Google Maps API key in .env file
-  - CSV file with 'Business Name' and 'Business Address' columns
+  # Search Google Maps for businesses
+  %(prog)s search "dentists in Austin TX" output.csv
+
+  # Search with location (lat,lng) and radius (miles)
+  %(prog)s search "dentists" output.csv --location 30.2672,-97.7431 --radius 10
+
+  # Search and append to existing file
+  %(prog)s search "dentists" output.csv --append --limit 50
+
+  # Legacy mode (backward compatible)
+  %(prog)s input.csv output.csv
         """
     )
 
-    parser.add_argument(
-        'input_csv',
-        help='Path to input CSV file'
-    )
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    parser.add_argument(
-        'output_csv',
-        help='Path to output CSV file'
-    )
+    # Enrich command (current functionality)
+    enrich_parser = subparsers.add_parser('enrich', help='Enrich existing CSV with Google Maps data')
+    enrich_parser.add_argument('input_csv', help='Input CSV file')
+    enrich_parser.add_argument('output_csv', help='Output CSV file')
+
+    # Search command (new)
+    search_parser = subparsers.add_parser('search', help='Search Google Maps for businesses')
+    search_parser.add_argument('query', help='Search query (e.g., "dentists in Austin TX")')
+    search_parser.add_argument('output_csv', help='Output CSV file')
+    search_parser.add_argument('--limit', type=int, default=20, help='Max results (default: 20)')
+    search_parser.add_argument('--append', action='store_true', help='Append to existing file')
+    search_parser.add_argument('--location', help='Lat,Lng coordinates (e.g., "30.2672,-97.7431")')
+    search_parser.add_argument('--radius', type=float, default=10, help='Search radius in miles (default: 10)')
 
     args = parser.parse_args()
 
-    # Validate input file exists
-    if not Path(args.input_csv).exists():
-        print(f"Error: Input file not found: {args.input_csv}")
+    # Handle no command (backward compatibility)
+    if args.command is None:
+        # Check if old-style args (2 positional = enrich mode)
+        if len(sys.argv) == 3 and not sys.argv[1].startswith('-'):
+            input_file = sys.argv[1]
+            output_file = sys.argv[2]
+            if not Path(input_file).exists():
+                print(f"Error: Input file not found: {input_file}")
+                sys.exit(1)
+            scraper = GoogleMapsReviewScraper()
+            scraper.process_csv(input_file, output_file)
+            return
+        parser.print_help()
         sys.exit(1)
 
-    # Create scraper and process
     scraper = GoogleMapsReviewScraper()
-    scraper.process_csv(args.input_csv, args.output_csv)
+
+    if args.command == 'enrich':
+        if not Path(args.input_csv).exists():
+            print(f"Error: Input file not found: {args.input_csv}")
+            sys.exit(1)
+        scraper.process_csv(args.input_csv, args.output_csv)
+
+    elif args.command == 'search':
+        # Parse location if provided
+        location = None
+        radius_meters = None
+        if args.location:
+            try:
+                lat, lng = map(float, args.location.split(','))
+                location = (lat, lng)
+                # Convert miles to meters (1 mile = 1609.34 meters)
+                radius_meters = int(args.radius * 1609.34)
+            except ValueError:
+                print("Error: Location must be in format 'lat,lng' (e.g., '30.2672,-97.7431')")
+                sys.exit(1)
+
+        scraper.process_search(
+            args.query,
+            args.output_csv,
+            args.limit,
+            args.append,
+            location,
+            radius_meters
+        )
 
 
 if __name__ == '__main__':

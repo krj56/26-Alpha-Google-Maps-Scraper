@@ -1,15 +1,33 @@
-# Google Maps Review Scraper
+# Google Maps Business Scraper
 
-Automatically enrich your business lead CSV files with Google Maps ratings, review counts, and direct links to their Google Maps pages.
+A powerful tool to find and enrich business leads using Google Maps data.
 
-**Perfect for:** Sales teams, marketers, and business development professionals who want to prioritize leads based on their online reputation.
+**Perfect for:** Sales teams, marketers, and business development professionals who want to find leads or enrich existing data with Google reviews.
 
 ## What This Tool Does
 
-Give it a CSV file with business names and addresses, and it will add:
-- **Google Review Rating** (e.g., 4.5 stars)
-- **Google Review Count** (e.g., 127 reviews)
-- **Google Maps URL** (direct link to their Google Maps page)
+**Two Modes:**
+
+### 1. Search Mode (NEW!)
+Search Google Maps directly for businesses and export to CSV:
+```bash
+python3 main.py search "dentists in Austin TX" leads.csv
+```
+
+### 2. Enrich Mode
+Take an existing CSV with business names/addresses and add Google data:
+```bash
+python3 main.py enrich input.csv output.csv
+```
+
+**Data Collected:**
+- Company Name
+- Company Address
+- Phone Number
+- Website
+- Google Review Rating (e.g., 4.5 stars)
+- Google Review Count (e.g., 127 reviews)
+- Google Maps URL (direct link)
 
 ## Quick Start (5 Steps)
 
@@ -74,58 +92,76 @@ This is the most important step. You need a Google API key to access Google Maps
 
 ## How to Use
 
-### Prepare Your CSV File
+### Option 1: Search Mode (Find New Leads)
 
-Your CSV needs at least two columns:
+Search Google Maps for businesses and save to CSV:
+
+```bash
+# Basic search
+python3 main.py search "dentists in Austin TX" dentists.csv
+
+# Limit results (default is 20)
+python3 main.py search "coffee shops in Seattle" coffee.csv --limit 50
+
+# Search by location (lat,lng) with radius in miles
+python3 main.py search "dentists" dentists.csv --location 30.2672,-97.7431 --radius 15
+
+# Append to existing file (won't duplicate)
+python3 main.py search "dentists in Round Rock TX" dentists.csv --append
+```
+
+**Output columns:** Company Name, Address, Phone, Website, Rating, Review Count, Google Maps URL
+
+### Option 2: Enrich Mode (Add Data to Existing CSV)
+
+Take a CSV with business names/addresses and add Google data:
+
+```bash
+# Enrich existing CSV
+python3 main.py enrich leads.csv enriched_leads.csv
+
+# Or use legacy syntax (backward compatible)
+python3 main.py leads.csv enriched_leads.csv
+```
+
+Your input CSV needs columns:
 - **Company Name** (or "Business Name")
 - **Company Address** (or "Business Address")
 
-Example CSV:
+Example input CSV:
 ```
 Company Name,Company Address,Contact Email
 Starbucks,"1912 Pike Pl, Seattle, WA 98101",contact@example.com
 Tesla HQ,"1 Tesla Rd, Austin, TX 78725",info@example.com
 ```
 
-### Run the Script
-
-Open Terminal/Command Prompt, navigate to the project folder, and run:
-
-**Mac:**
-```bash
-python3 main.py your_input_file.csv your_output_file.csv
-```
-
-**Windows:**
-```bash
-python main.py your_input_file.csv your_output_file.csv
-```
-
-**Example:**
-```bash
-python3 main.py leads.csv enriched_leads.csv
-```
-
-**Tip for filenames with spaces:** Use backslashes before spaces:
-```bash
-python3 main.py my\ leads\ file.csv enriched\ output.csv
-```
-
 ### What You'll Get
 
-The script creates a new CSV file with three new columns added:
+**Search mode** creates a fresh CSV with all business data.
+
+**Enrich mode** adds three new columns to your existing data:
 - `Google Review Rating`
 - `Google Review Count`
 - `Google Maps URL`
 
 If any businesses couldn't be found, they'll be listed in `error_log.csv`.
 
+### Tip for filenames with spaces
+
+Use backslashes before spaces:
+```bash
+python3 main.py search "dentists" my\ leads\ file.csv
+```
+
 ## Smart Features
 
-- **Skips completed rows:** If you run it again on an already-enriched file, it won't re-fetch data that's already there
+- **Append mode:** Build up a lead database over time - use `--append` to add new results without duplicates
+- **Location search:** Search by coordinates + radius (in miles) to find businesses in specific areas
+- **Skips completed rows:** If you run enrich again on an already-enriched file, it won't re-fetch existing data
 - **URL-only mode:** If you have ratings but no URLs, it only fetches the missing URLs (saves API costs)
 - **Flexible column names:** Works with "Business Name" or "Company Name" (same for address)
 - **Error logging:** Failed lookups are saved separately so you can review them
+- **Pagination:** Automatically fetches multiple pages to get large result sets (50, 100+ results)
 
 ## Troubleshooting
 
