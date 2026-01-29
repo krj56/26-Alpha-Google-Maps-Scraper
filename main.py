@@ -2,6 +2,7 @@
 """Google Maps Review Scraper - Enrich business leads with review data."""
 import argparse
 import csv
+import re
 import sys
 import time
 from datetime import datetime
@@ -9,9 +10,140 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from config import Config
+
+
+class WebsiteEnricher:
+    """Extracts social links and content from business websites."""
+
+    SOCIAL_PATTERNS = {
+        'LinkedIn URL': [
+            r'linkedin\.com/company/[\w-]+',
+            r'linkedin\.com/in/[\w-]+'
+        ],
+        'Facebook URL': [
+            r'facebook\.com/[\w.-]+',
+            r'fb\.com/[\w.-]+'
+        ],
+        'Instagram URL': [
+            r'instagram\.com/[\w._]+',
+        ],
+        'Twitter URL': [
+            r'twitter\.com/[\w_]+',
+            r'x\.com/[\w_]+'
+        ]
+    }
+
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (compatible; LeadEnricher/1.0)'
+        })
+
+    def extract_social_links(self, html_content):
+        """Find social media links in HTML content."""
+        soup = BeautifulSoup(html_content, 'lxml')
+        links = {}
+
+        # Find all anchor tags
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag['href']
+            for platform, patterns in self.SOCIAL_PATTERNS.items():
+                if platform not in links:
+                    for pattern in patterns:
+                        if re.search(pattern, href, re.IGNORECASE):
+                            # Normalize URL
+                            if not href.startswith('http'):
+                                href = 'https://' + href.lstrip('/')
+                            links[platform] = href
+                            break
+
+        return links
+
+    def extract_content(self, html_content):
+        """Extract title and description from website."""
+        soup = BeautifulSoup(html_content, 'lxml')
+
+        # Get title
+        title = ''
+        if soup.title:
+            title = soup.title.string.strip() if soup.title.string else ''
+
+        # Get meta description
+        description = ''
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        if meta_desc and meta_desc.get('content'):
+            description = meta_desc['content'].strip()
+
+        # Fallback: get first paragraph if no meta description
+        if not description:
+            first_p = soup.find('p')
+            if first_p:
+                description = first_p.get_text().strip()[:300]
+
+        return title, description
+
+    def generate_brief(self, title, description, company_name):
+        """Generate a research brief from website content."""
+        brief = f"{company_name}"
+        if description:
+            # Clean and truncate description
+            clean_desc = ' '.join(description.split())[:200]
+            brief = f"{company_name}: {clean_desc}"
+        elif title:
+            brief = f"{company_name} - {title}"
+        return brief
+
+    def fetch_website(self, url, timeout=10):
+        """Fetch website content with error handling."""
+        if not url or pd.isna(url):
+            return None, "No website URL"
+
+        try:
+            # Ensure https
+            if not url.startswith('http'):
+                url = 'https://' + url
+
+            response = self.session.get(url, timeout=timeout, allow_redirects=True)
+            response.raise_for_status()
+            return response.text, None
+        except requests.exceptions.Timeout:
+            return None, "Timeout"
+        except requests.exceptions.SSLError:
+            return None, "SSL Error"
+        except requests.exceptions.RequestException as e:
+            return None, f"Request failed: {str(e)[:50]}"
+
+    def enrich_row(self, row):
+        """Enrich a single business row with website data."""
+        website = row.get('Website', '')
+        company_name = row.get('Company Name', '')
+
+        result = {
+            'LinkedIn URL': '',
+            'Facebook URL': '',
+            'Instagram URL': '',
+            'Twitter URL': '',
+            'Research Brief': ''
+        }
+
+        html, error = self.fetch_website(website)
+        if error:
+            result['Research Brief'] = f"Could not fetch: {error}"
+            return result
+
+        # Extract social links
+        social_links = self.extract_social_links(html)
+        result.update(social_links)
+
+        # Extract content and generate brief
+        title, description = self.extract_content(html)
+        result['Research Brief'] = self.generate_brief(title, description, company_name)
+
+        return result
 
 
 class GoogleMapsReviewScraper:
@@ -23,6 +155,7 @@ class GoogleMapsReviewScraper:
         self.api_key = Config.GOOGLE_MAPS_API_KEY
         self.error_log = []
         self.base_url = "https://places.googleapis.com/v1/places"
+        self.session = requests.Session()
 
     def find_column(self, df, column_name):
         """
@@ -71,7 +204,7 @@ class GoogleMapsReviewScraper:
                 "textQuery": query
             }
 
-            response = requests.post(url, json=data, headers=headers)
+            response = self.session.post(url, json=data, headers=headers)
             result = response.json()
 
             if response.status_code == 200 and 'places' in result and result['places']:
@@ -105,7 +238,7 @@ class GoogleMapsReviewScraper:
                 "X-Goog-FieldMask": "rating,userRatingCount,googleMapsUri"
             }
 
-            response = requests.get(url, headers=headers)
+            response = self.session.get(url, headers=headers)
             result = response.json()
 
             if response.status_code == 200:
@@ -176,7 +309,7 @@ class GoogleMapsReviewScraper:
                 "X-Goog-Api-Key": self.api_key,
                 "X-Goog-FieldMask": "googleMapsUri"
             }
-            response = requests.get(url, headers=headers)
+            response = self.session.get(url, headers=headers)
             result = response.json()
 
             if response.status_code == 200:
@@ -228,7 +361,7 @@ class GoogleMapsReviewScraper:
 
         while len(businesses) < max_results:
             time.sleep(Config.REQUEST_DELAY)
-            response = requests.post(url, json=data, headers=headers)
+            response = self.session.post(url, json=data, headers=headers)
             result = response.json()
 
             if response.status_code != 200:
@@ -263,7 +396,7 @@ class GoogleMapsReviewScraper:
 
         return businesses
 
-    def process_search(self, query, output_path, max_results=20, append=False, location=None, radius=None):
+    def process_search(self, query, output_path, max_results=20, append=False, location=None, radius=None, enrich_web=False):
         """
         Search Google Maps and save results to CSV.
 
@@ -274,6 +407,7 @@ class GoogleMapsReviewScraper:
             append: If True, append to existing file
             location: Tuple of (latitude, longitude) for location-based search
             radius: Search radius in meters
+            enrich_web: If True, also scrape websites for social links and research brief
         """
         businesses = self.search_businesses(query, max_results, location, radius)
 
@@ -294,9 +428,57 @@ class GoogleMapsReviewScraper:
         else:
             print(f"\nFound {len(businesses)} businesses")
 
+        # Website enrichment
+        if enrich_web:
+            df = self.enrich_with_website_data(df)
+
         df.to_csv(output_path, index=False)
         print(f"Saved to: {output_path}")
         print(f"Total rows in file: {len(df)}")
+
+    def enrich_with_website_data(self, df):
+        """
+        Add website data (social links, research brief) to DataFrame.
+
+        Args:
+            df: pandas DataFrame with 'Website' and 'Company Name' columns
+
+        Returns:
+            DataFrame with added columns for social links and research brief
+        """
+        enricher = WebsiteEnricher()
+
+        # New columns to add
+        new_columns = [
+            'LinkedIn URL', 'Facebook URL', 'Instagram URL', 'Twitter URL',
+            'Research Brief'
+        ]
+
+        # Initialize columns if not present
+        for col in new_columns:
+            if col not in df.columns:
+                df[col] = ''
+
+        print("\nEnriching with website data...")
+
+        for idx, row in tqdm(df.iterrows(), total=len(df), desc="Fetching websites"):
+            # Skip if already enriched (has Research Brief that's not an error)
+            existing_brief = row.get('Research Brief')
+            if existing_brief and pd.notna(existing_brief) and not str(existing_brief).startswith('Could not fetch'):
+                continue
+
+            # Skip if no website
+            if not row.get('Website') or pd.isna(row.get('Website')):
+                df.at[idx, 'Research Brief'] = 'No website available'
+                continue
+
+            result = enricher.enrich_row(row)
+            for col, value in result.items():
+                df.at[idx, col] = value
+
+            time.sleep(Config.WEBSITE_SCRAPE_DELAY)
+
+        return df
 
     def process_csv(self, input_path, output_path):
         """
@@ -362,7 +544,8 @@ class GoogleMapsReviewScraper:
             business_address = row[business_address_col]
 
             # Skip if either field is empty
-            if pd.isna(business_name) or pd.isna(business_address):
+            if (pd.isna(business_name) or str(business_name).strip() == '' or
+                pd.isna(business_address) or str(business_address).strip() == ''):
                 self.error_log.append({
                     'row': idx + 2,  # +2 for header and 0-indexing
                     'business_name': business_name,
@@ -476,6 +659,12 @@ Examples:
   # Search and append to existing file
   %(prog)s search "dentists" output.csv --append --limit 50
 
+  # Search with website enrichment (social links + research brief)
+  %(prog)s search "dentists" output.csv --enrich-web
+
+  # Enrich existing CSV with website data only
+  %(prog)s enrich-web input.csv output.csv
+
   # Legacy mode (backward compatible)
   %(prog)s input.csv output.csv
         """
@@ -496,6 +685,14 @@ Examples:
     search_parser.add_argument('--append', action='store_true', help='Append to existing file')
     search_parser.add_argument('--location', help='Lat,Lng coordinates (e.g., "30.2672,-97.7431")')
     search_parser.add_argument('--radius', type=float, default=10, help='Search radius in miles (default: 10)')
+    search_parser.add_argument('--enrich-web', action='store_true', dest='enrich_web',
+        help='Also scrape websites for social links and research brief')
+
+    # Enrich-web command (website enrichment only)
+    enrich_web_parser = subparsers.add_parser('enrich-web',
+        help='Enrich existing CSV with website data (social links, research brief)')
+    enrich_web_parser.add_argument('input_csv', help='Input CSV file with Website column')
+    enrich_web_parser.add_argument('output_csv', help='Output CSV file')
 
     args = parser.parse_args()
 
@@ -542,8 +739,20 @@ Examples:
             args.limit,
             args.append,
             location,
-            radius_meters
+            radius_meters,
+            args.enrich_web
         )
+
+    elif args.command == 'enrich-web':
+        if not Path(args.input_csv).exists():
+            print(f"Error: Input file not found: {args.input_csv}")
+            sys.exit(1)
+        print(f"Reading CSV from: {args.input_csv}")
+        df = pd.read_csv(args.input_csv)
+        print(f"Found {len(df)} rows")
+        df = scraper.enrich_with_website_data(df)
+        df.to_csv(args.output_csv, index=False)
+        print(f"\nSaved to: {args.output_csv}")
 
 
 if __name__ == '__main__':

@@ -21,6 +21,9 @@ class Config:
     # Delay between API requests (in seconds) to avoid rate limiting
     REQUEST_DELAY = 0.1
 
+    # Delay between website scrape requests (in seconds)
+    WEBSITE_SCRAPE_DELAY = 0.5
+
     @classmethod
     def validate(cls):
         """Validate that required configuration is present."""

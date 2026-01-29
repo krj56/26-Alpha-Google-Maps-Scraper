@@ -6,9 +6,9 @@ A powerful tool to find and enrich business leads using Google Maps data.
 
 ## What This Tool Does
 
-**Two Modes:**
+**Three Modes:**
 
-### 1. Search Mode (NEW!)
+### 1. Search Mode
 Search Google Maps directly for businesses and export to CSV:
 ```bash
 python3 main.py search "dentists in Austin TX" leads.csv
@@ -20,6 +20,12 @@ Take an existing CSV with business names/addresses and add Google data:
 python3 main.py enrich input.csv output.csv
 ```
 
+### 3. Website Enrichment Mode (NEW!)
+Add social media links and research briefs by scraping business websites:
+```bash
+python3 main.py search "dentists in Austin TX" leads.csv --enrich-web
+```
+
 **Data Collected:**
 - Company Name
 - Company Address
@@ -28,6 +34,11 @@ python3 main.py enrich input.csv output.csv
 - Google Review Rating (e.g., 4.5 stars)
 - Google Review Count (e.g., 127 reviews)
 - Google Maps URL (direct link)
+- LinkedIn URL (with `--enrich-web`)
+- Facebook URL (with `--enrich-web`)
+- Instagram URL (with `--enrich-web`)
+- Twitter URL (with `--enrich-web`)
+- Research Brief (with `--enrich-web`)
 
 ## Quick Start (5 Steps)
 
@@ -112,7 +123,25 @@ python3 main.py search "dentists in Round Rock TX" dentists.csv --append
 
 **Output columns:** Company Name, Address, Phone, Website, Rating, Review Count, Google Maps URL
 
-### Option 2: Enrich Mode (Add Data to Existing CSV)
+### Option 2: Website Enrichment (Social Links + Research Brief)
+
+Add social media links and website summaries to your leads:
+
+```bash
+# Search and enrich in one step
+python3 main.py search "dentists in Austin TX" leads.csv --enrich-web
+
+# Or enrich an existing CSV with website data only
+python3 main.py enrich-web leads.csv enriched_leads.csv
+```
+
+**Additional columns added:**
+- LinkedIn URL, Facebook URL, Instagram URL, Twitter URL
+- Research Brief (summary of what the business does)
+
+**Note:** Website enrichment adds ~0.5 seconds per business to respect rate limits.
+
+### Option 3: Enrich Mode (Add Data to Existing CSV)
 
 Take a CSV with business names/addresses and add Google data:
 
@@ -155,6 +184,7 @@ python3 main.py search "dentists" my\ leads\ file.csv
 
 ## Smart Features
 
+- **Website enrichment:** Use `--enrich-web` to scrape websites for social media links and generate research briefs
 - **Append mode:** Build up a lead database over time - use `--append` to add new results without duplicates
 - **Location search:** Search by coordinates + radius (in miles) to find businesses in specific areas
 - **Skips completed rows:** If you run enrich again on an already-enriched file, it won't re-fetch existing data
