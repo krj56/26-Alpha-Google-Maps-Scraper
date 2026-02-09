@@ -6,7 +6,7 @@ A powerful tool to find and enrich business leads using Google Maps data.
 
 ## What This Tool Does
 
-**Three Modes:**
+**Four Modes:**
 
 ### 1. Search Mode
 Search Google Maps directly for businesses and export to CSV:
@@ -20,10 +20,18 @@ Take an existing CSV with business names/addresses and add Google data:
 python3 main.py enrich input.csv output.csv
 ```
 
-### 3. Website Enrichment Mode (NEW!)
+### 3. Website Enrichment Mode
 Add social media links and research briefs by scraping business websites:
 ```bash
 python3 main.py search "dentists in Austin TX" leads.csv --enrich-web
+```
+
+### 4. AI Email Generation Mode (NEW!)
+Generate personalized cold outreach emails using any LLM (OpenAI, Anthropic, Gemini, etc.):
+```bash
+python3 main.py generate-emails leads.csv output.csv \
+  --provider openai --model gpt-4o \
+  --product "dental marketing software that helps practices get more patients"
 ```
 
 **Data Collected:**
@@ -39,6 +47,7 @@ python3 main.py search "dentists in Austin TX" leads.csv --enrich-web
 - Instagram URL (with `--enrich-web`)
 - Twitter URL (with `--enrich-web`)
 - Research Brief (with `--enrich-web`)
+- Generated Email (with `generate-emails`)
 
 ## Quick Start (5 Steps)
 
@@ -141,7 +150,37 @@ python3 main.py enrich-web leads.csv enriched_leads.csv
 
 **Note:** Website enrichment adds ~0.5 seconds per business to respect rate limits.
 
-### Option 3: Enrich Mode (Add Data to Existing CSV)
+### Option 3: AI Email Generation (Personalized Cold Outreach)
+
+Generate personalized cold emails for each lead using any LLM provider:
+
+```bash
+# Generate emails with OpenAI
+python3 main.py generate-emails leads.csv leads_with_emails.csv \
+  --provider openai --model gpt-4o \
+  --product "dental marketing software that helps practices get more patients"
+
+# Use Anthropic instead
+python3 main.py generate-emails leads.csv output.csv \
+  --provider anthropic --model claude-sonnet-4-5-20250929 \
+  --product "commercial cleaning services for offices"
+
+# Use a custom prompt template
+python3 main.py generate-emails leads.csv output.csv \
+  --provider openai --model gpt-4o \
+  --product "dental marketing software" \
+  --prompt-file my_prompt.txt
+```
+
+**Supported LLM providers:** OpenAI, Anthropic, Google Gemini, OpenRouter, Perplexity (and 100+ more via litellm)
+
+**API key:** Pass with `--api-key` or set via environment variable (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
+
+**Custom prompts:** Edit `default_email_prompt.txt` or create your own prompt file with `{variable}` placeholders. See the file for the full list of available variables.
+
+**Cost:** ~$0.005 per email with GPT-4o, ~100 emails for $0.50
+
+### Option 4: Enrich Mode (Add Data to Existing CSV)
 
 Take a CSV with business names/addresses and add Google data:
 
@@ -184,6 +223,8 @@ python3 main.py search "dentists" my\ leads\ file.csv
 
 ## Smart Features
 
+- **AI email generation:** Use `generate-emails` to write personalized cold outreach emails using any LLM provider
+- **Customizable prompts:** Edit `default_email_prompt.txt` or use `--prompt-file` for full control over email style
 - **Website enrichment:** Use `--enrich-web` to scrape websites for social media links and generate research briefs
 - **Append mode:** Build up a lead database over time - use `--append` to add new results without duplicates
 - **Location search:** Search by coordinates + radius (in miles) to find businesses in specific areas

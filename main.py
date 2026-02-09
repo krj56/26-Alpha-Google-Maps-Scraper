@@ -2,6 +2,7 @@
 """Google Maps Review Scraper - Enrich business leads with review data."""
 import argparse
 import csv
+import os
 import re
 import sys
 import time
@@ -146,6 +147,63 @@ class WebsiteEnricher:
         return result
 
 
+class EmailGenerator:
+    """Generates personalized cold outreach emails using LLMs."""
+
+    DEFAULT_PROMPT_FILE = Path(__file__).parent / 'default_email_prompt.txt'
+
+    def __init__(self, model, api_key, prompt_file=None):
+        self.model = model
+        self.api_key = api_key
+        self.prompt_template = self._load_prompt(prompt_file)
+
+    def _load_prompt(self, prompt_file=None):
+        """Load prompt template from file."""
+        path = Path(prompt_file) if prompt_file else self.DEFAULT_PROMPT_FILE
+        if not path.exists():
+            print(f"Error: Prompt file not found: {path}")
+            sys.exit(1)
+        return path.read_text(encoding='utf-8')
+
+    def _build_prompt(self, row, product_description):
+        """Build the final prompt by filling in variables from lead data."""
+        def safe_val(val):
+            if pd.isna(val) or (isinstance(val, str) and not val.strip()):
+                return 'N/A'
+            return str(val).strip()
+
+        return self.prompt_template.format(
+            company_name=safe_val(row.get('Company Name', '')),
+            company_address=safe_val(row.get('Company Address', '')),
+            website=safe_val(row.get('Website', '')),
+            rating=safe_val(row.get('Google Review Rating', '')),
+            review_count=safe_val(row.get('Google Review Count', '')),
+            research_brief=safe_val(row.get('Research Brief', '')),
+            linkedin_url=safe_val(row.get('LinkedIn URL', '')),
+            product_description=product_description
+        )
+
+    def generate_email(self, row, product_description):
+        """Generate a personalized email for a single lead."""
+        import litellm
+
+        prompt = self._build_prompt(row, product_description)
+
+        try:
+            response = litellm.completion(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                api_key=self.api_key,
+                max_tokens=500,
+                temperature=0.7
+            )
+
+            return response.choices[0].message.content.strip(), None
+
+        except Exception as e:
+            return None, f"LLM error: {str(e)[:100]}"
+
+
 class GoogleMapsReviewScraper:
     """Scraper to enrich business data with Google Maps reviews."""
 
@@ -204,13 +262,14 @@ class GoogleMapsReviewScraper:
                 "textQuery": query
             }
 
-            response = self.session.post(url, json=data, headers=headers)
+            response = self.session.post(url, json=data, headers=headers, timeout=Config.REQUEST_TIMEOUT)
             result = response.json()
 
             if response.status_code == 200 and 'places' in result and result['places']:
                 # Return the place ID (format: places/ChIJ...)
                 return result['places'][0]['id'], None
-            elif response.status_code == 200 and 'places' not in result:
+            elif response.status_code == 200:
+                # Handles both missing 'places' key and empty list
                 return None, "Business not found on Google Maps"
             else:
                 error_msg = result.get('error', {}).get('message', f"HTTP {response.status_code}")
@@ -238,7 +297,7 @@ class GoogleMapsReviewScraper:
                 "X-Goog-FieldMask": "rating,userRatingCount,googleMapsUri"
             }
 
-            response = self.session.get(url, headers=headers)
+            response = self.session.get(url, headers=headers, timeout=Config.REQUEST_TIMEOUT)
             result = response.json()
 
             if response.status_code == 200:
@@ -309,7 +368,7 @@ class GoogleMapsReviewScraper:
                 "X-Goog-Api-Key": self.api_key,
                 "X-Goog-FieldMask": "googleMapsUri"
             }
-            response = self.session.get(url, headers=headers)
+            response = self.session.get(url, headers=headers, timeout=Config.REQUEST_TIMEOUT)
             result = response.json()
 
             if response.status_code == 200:
@@ -361,8 +420,12 @@ class GoogleMapsReviewScraper:
 
         while len(businesses) < max_results:
             time.sleep(Config.REQUEST_DELAY)
-            response = self.session.post(url, json=data, headers=headers)
-            result = response.json()
+            try:
+                response = self.session.post(url, json=data, headers=headers, timeout=Config.REQUEST_TIMEOUT)
+                result = response.json()
+            except Exception as e:
+                print(f"Request error: {e}")
+                break
 
             if response.status_code != 200:
                 error_msg = result.get('error', {}).get('message', f"HTTP {response.status_code}")
@@ -419,9 +482,36 @@ class GoogleMapsReviewScraper:
         # Handle append mode
         if append and Path(output_path).exists():
             existing_df = pd.read_csv(output_path)
-            # Deduplicate by Google Maps URL
-            existing_urls = set(existing_df['Google Maps URL'].dropna())
-            new_df = df[~df['Google Maps URL'].isin(existing_urls)]
+            new_df = df
+
+            if 'Google Maps URL' in existing_df.columns:
+                # Preferred dedupe strategy when URL is available.
+                existing_urls = set(existing_df['Google Maps URL'].dropna().astype(str).str.strip())
+                new_df = df[~df['Google Maps URL'].fillna('').astype(str).str.strip().isin(existing_urls)]
+            else:
+                # Fallback dedupe strategy for files without Google Maps URL.
+                existing_name_col = self.find_column(existing_df, 'Company Name') or self.find_column(existing_df, 'Business Name')
+                existing_address_col = self.find_column(existing_df, 'Company Address') or self.find_column(existing_df, 'Business Address')
+
+                if existing_name_col and existing_address_col:
+                    def normalize(val):
+                        if pd.isna(val):
+                            return ''
+                        return re.sub(r'\s+', ' ', str(val)).strip().lower()
+
+                    existing_keys = set(
+                        zip(
+                            existing_df[existing_name_col].map(normalize),
+                            existing_df[existing_address_col].map(normalize)
+                        )
+                    )
+                    new_keys = list(zip(df['Company Name'].map(normalize), df['Company Address'].map(normalize)))
+                    keep_mask = [key not in existing_keys for key in new_keys]
+                    new_df = df[keep_mask]
+                    print("\nAppend mode: 'Google Maps URL' not found, deduping by name + address")
+                else:
+                    print("\nAppend mode: could not identify name/address columns, skipping dedupe")
+
             new_count = len(new_df)
             df = pd.concat([existing_df, new_df], ignore_index=True)
             print(f"\nAppending {new_count} new businesses to existing {len(existing_df)} rows")
@@ -480,6 +570,31 @@ class GoogleMapsReviewScraper:
 
         return df
 
+    def generate_emails(self, df, model, api_key, product_description, prompt_file=None):
+        """Generate personalized emails for each lead in DataFrame."""
+        generator = EmailGenerator(model, api_key, prompt_file)
+
+        if 'Generated Email' not in df.columns:
+            df['Generated Email'] = ''
+
+        print("\nGenerating personalized emails...")
+
+        for idx, row in tqdm(df.iterrows(), total=len(df), desc="Writing emails"):
+            # Skip if already has email
+            existing = row.get('Generated Email')
+            if existing and pd.notna(existing) and str(existing).strip():
+                continue
+
+            email, error = generator.generate_email(row, product_description)
+            if error:
+                df.at[idx, 'Generated Email'] = f"Error: {error}"
+            else:
+                df.at[idx, 'Generated Email'] = email
+
+            time.sleep(0.2)  # Light rate limiting
+
+        return df
+
     def process_csv(self, input_path, output_path):
         """
         Process CSV file and enrich with Google Maps review data.
@@ -488,6 +603,7 @@ class GoogleMapsReviewScraper:
             input_path: Path to input CSV file
             output_path: Path to output CSV file
         """
+        self.error_log = []  # Reset for each run
         # Read CSV
         print(f"Reading CSV from: {input_path}")
         try:
@@ -620,10 +736,9 @@ class GoogleMapsReviewScraper:
             print(f"Saving error log to: {error_log_path}")
 
             with open(error_log_path, 'w', newline='', encoding='utf-8') as f:
-                if self.error_log:
-                    writer = csv.DictWriter(f, fieldnames=['row', 'business_name', 'business_address', 'error', 'timestamp'])
-                    writer.writeheader()
-                    writer.writerows(self.error_log)
+                writer = csv.DictWriter(f, fieldnames=['row', 'business_name', 'business_address', 'error', 'timestamp'])
+                writer.writeheader()
+                writer.writerows(self.error_log)
 
             print(f"\nCompleted with {len(self.error_log)} errors (see error_log.csv)")
         else:
@@ -665,6 +780,9 @@ Examples:
   # Enrich existing CSV with website data only
   %(prog)s enrich-web input.csv output.csv
 
+  # Generate personalized emails using AI
+  %(prog)s generate-emails leads.csv output.csv --provider openai --model gpt-4o --product "dental marketing software"
+
   # Legacy mode (backward compatible)
   %(prog)s input.csv output.csv
         """
@@ -693,6 +811,23 @@ Examples:
         help='Enrich existing CSV with website data (social links, research brief)')
     enrich_web_parser.add_argument('input_csv', help='Input CSV file with Website column')
     enrich_web_parser.add_argument('output_csv', help='Output CSV file')
+
+    # Generate-emails command (AI email generation)
+    email_parser = subparsers.add_parser('generate-emails',
+        help='Generate personalized cold emails using AI')
+    email_parser.add_argument('input_csv', help='Input CSV (ideally with enrichments)')
+    email_parser.add_argument('output_csv', help='Output CSV with Generated Email column')
+    email_parser.add_argument('--provider', required=True,
+        choices=['openai', 'anthropic', 'gemini', 'openrouter', 'perplexity'],
+        help='LLM provider (determines which env var to check for API key)')
+    email_parser.add_argument('--model', required=True,
+        help='Model name (e.g., gpt-4o, claude-sonnet-4-5-20250929)')
+    email_parser.add_argument('--api-key', dest='llm_api_key', default=None,
+        help='LLM API key (or set via env var)')
+    email_parser.add_argument('--product', required=True,
+        help='Description of your product/service')
+    email_parser.add_argument('--prompt-file', dest='prompt_file', default=None,
+        help='Path to custom prompt template file (default: default_email_prompt.txt)')
 
     args = parser.parse_args()
 
@@ -727,6 +862,9 @@ Examples:
             try:
                 lat, lng = map(float, args.location.split(','))
                 location = (lat, lng)
+                if args.radius <= 0:
+                    print("Error: Radius must be greater than 0")
+                    sys.exit(1)
                 # Convert miles to meters (1 mile = 1609.34 meters)
                 radius_meters = int(args.radius * 1609.34)
             except ValueError:
@@ -748,9 +886,37 @@ Examples:
             print(f"Error: Input file not found: {args.input_csv}")
             sys.exit(1)
         print(f"Reading CSV from: {args.input_csv}")
-        df = pd.read_csv(args.input_csv)
+        try:
+            df = pd.read_csv(args.input_csv)
+        except Exception as e:
+            print(f"Error reading CSV: {e}")
+            sys.exit(1)
         print(f"Found {len(df)} rows")
         df = scraper.enrich_with_website_data(df)
+        df.to_csv(args.output_csv, index=False)
+        print(f"\nSaved to: {args.output_csv}")
+
+    elif args.command == 'generate-emails':
+        if not Path(args.input_csv).exists():
+            print(f"Error: Input file not found: {args.input_csv}")
+            sys.exit(1)
+
+        # Get API key from arg or environment
+        llm_api_key = args.llm_api_key or os.getenv(f'{args.provider.upper()}_API_KEY')
+        if not llm_api_key:
+            print(f"Error: No API key. Use --api-key or set {args.provider.upper()}_API_KEY env var")
+            sys.exit(1)
+
+        print(f"Reading CSV from: {args.input_csv}")
+        try:
+            df = pd.read_csv(args.input_csv)
+        except Exception as e:
+            print(f"Error reading CSV: {e}")
+            sys.exit(1)
+        print(f"Found {len(df)} rows")
+
+        df = scraper.generate_emails(df, args.model, llm_api_key,
+                                      args.product, args.prompt_file)
         df.to_csv(args.output_csv, index=False)
         print(f"\nSaved to: {args.output_csv}")
 
