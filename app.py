@@ -21,11 +21,47 @@ st.set_page_config(
 # Constants
 PREVIEW_SIZE = 10
 
+# Model options per provider (litellm format)
+PROVIDER_MODELS = {
+    "openai": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "o3", "o3-mini", "o4-mini"],
+    "anthropic": ["claude-opus-4-6", "claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"],
+    "gemini": ["gemini/gemini-2.5-pro-preview-05-06", "gemini/gemini-2.5-flash-preview-04-17", "gemini/gemini-2.0-flash"],
+    "openrouter": ["openrouter/google/gemini-2.0-flash-exp:free", "openrouter/deepseek/deepseek-chat-v3-0324:free", "openrouter/meta-llama/llama-4-maverick:free"],
+    "perplexity": ["perplexity/sonar-pro", "perplexity/sonar", "perplexity/sonar-reasoning"],
+}
+
 # Initialize session state
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'results_ready' not in st.session_state:
     st.session_state.results_ready = False
+if 'custom_prompt' not in st.session_state:
+    st.session_state.custom_prompt = adapter.DEFAULT_PROMPT_TEMPLATE
+
+
+@st.dialog("Edit Email Prompt", width="large")
+def edit_prompt_dialog():
+    st.markdown("Edit the prompt template below. Available variables:")
+    st.code("{company_name}, {company_address}, {company_phone}, {website}, "
+            "{rating}, {review_count}, {research_brief}, {linkedin_url}, "
+            "{facebook_url}, {instagram_url}, {twitter_url}, {product_description}")
+
+    edited = st.text_area(
+        "Prompt Template",
+        value=st.session_state.custom_prompt,
+        height=400,
+        label_visibility="collapsed"
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Save", type="primary", use_container_width=True):
+            st.session_state.custom_prompt = edited
+            st.rerun()
+    with col2:
+        if st.button("Reset to Default", use_container_width=True):
+            st.session_state.custom_prompt = adapter.DEFAULT_PROMPT_TEMPLATE
+            st.rerun()
 
 
 def df_to_csv_download(df, filename="leads.csv"):
@@ -144,11 +180,16 @@ with st.sidebar:
             help="Choose your AI provider"
         )
 
-        llm_model = st.text_input(
+        model_options = PROVIDER_MODELS.get(llm_provider, [])
+        all_model_options = [""] + model_options
+        # Reset model selection when provider changes
+        if st.session_state.get('llm_model', '') not in all_model_options:
+            st.session_state.llm_model = ""
+        llm_model = st.selectbox(
             "Model Name",
+            options=all_model_options,
             key="llm_model",
-            placeholder="e.g., gpt-4o-mini, claude-sonnet-4-5-20250929",
-            help="Specific model to use"
+            help="Choose a model (options depend on selected provider)"
         )
 
         default_llm_key = st.session_state.get('llm_api_key', '') or os.getenv(f'{llm_provider.upper()}_API_KEY', '') if llm_provider else ''
@@ -165,6 +206,9 @@ with st.sidebar:
             placeholder="Describe what you're offering...",
             help="Used to personalize each email"
         )
+
+        if st.button("Edit Email Prompt", use_container_width=True):
+            edit_prompt_dialog()
 
 
 # ========== MAIN CONTENT ==========
@@ -255,7 +299,7 @@ with tab1:
                             generator = adapter.create_email_generator(
                                 llm_model,
                                 llm_api_key,
-                                adapter.DEFAULT_PROMPT_TEMPLATE
+                                st.session_state.custom_prompt
                             )
 
                             df = adapter.generate_emails(
@@ -333,7 +377,7 @@ with tab1:
                             generator = adapter.create_email_generator(
                                 llm_model,
                                 llm_api_key,
-                                adapter.DEFAULT_PROMPT_TEMPLATE
+                                st.session_state.custom_prompt
                             )
 
                             df = adapter.generate_emails(
@@ -445,7 +489,7 @@ with tab2:
                                     generator = adapter.create_email_generator(
                                         llm_model,
                                         llm_api_key,
-                                        adapter.DEFAULT_PROMPT_TEMPLATE
+                                        st.session_state.custom_prompt
                                     )
 
                                     df = adapter.generate_emails(
@@ -536,7 +580,7 @@ with tab2:
                                     generator = adapter.create_email_generator(
                                         llm_model,
                                         llm_api_key,
-                                        adapter.DEFAULT_PROMPT_TEMPLATE
+                                        st.session_state.custom_prompt
                                     )
 
                                     df = adapter.generate_emails(
