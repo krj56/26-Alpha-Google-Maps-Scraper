@@ -367,8 +367,32 @@ with tab2:
     if uploaded_file is not None:
         try:
             df_upload = pd.read_csv(uploaded_file)
+
+            # Initialize enrichment columns if not present
+            enrichment_columns = {
+                'Google Review Rating': '',
+                'Google Review Count': '',
+                'LinkedIn URL': '',
+                'Facebook URL': '',
+                'Instagram URL': '',
+                'Twitter URL': '',
+                'Research Brief': '',
+                'Generated Email': ''
+            }
+
+            for col, default_val in enrichment_columns.items():
+                if col not in df_upload.columns:
+                    df_upload[col] = default_val
+
+            # Store in session state
+            st.session_state.df_upload = df_upload.copy()
+            st.session_state.preview_count = 0
+
             st.write(f"**Loaded:** {len(df_upload)} rows, {len(df_upload.columns)} columns")
-            st.dataframe(df_upload.head(), use_container_width=True)
+
+            # Display ALL rows
+            st.dataframe(st.session_state.df_upload, use_container_width=True)
+            st.info(f"💡 Showing all {len(df_upload)} rows. Use Preview to test enrichments on first 10 rows.")
 
             col_preview, col_run = st.columns(2)
 
@@ -384,7 +408,12 @@ with tab2:
                     else:
                         try:
                             scraper = adapter.create_scraper(google_api_key) if enrich_reviews else None
-                            df = df_upload.head(PREVIEW_SIZE).copy()
+
+                            # Work with full dataframe from session state
+                            df_full = st.session_state.df_upload.copy()
+
+                            # Create subset for enrichment (first 10 rows)
+                            df = df_full.head(PREVIEW_SIZE).copy()
 
                             # Step 1: Google Reviews (if enabled)
                             if enrich_reviews:
@@ -431,10 +460,18 @@ with tab2:
                                     )
                                     status.update(label="✓ Emails generated", state="complete")
 
-                            # Save to session state
-                            st.session_state.df = df
+                            # Merge enriched data back into full dataframe
+                            for idx in df.index:
+                                df_full.loc[idx] = df.loc[idx]
+
+                            # Update session state with full dataframe
+                            st.session_state.df_upload = df_full
+                            st.session_state.df = df_full  # Also update df for results display compatibility
+                            st.session_state.preview_count = PREVIEW_SIZE
                             st.session_state.results_ready = False
-                            st.success(f"✅ Preview complete! {len(df)} leads enriched")
+
+                            st.success(f"✅ Preview complete! Enriched first {PREVIEW_SIZE} rows. {len(df_full) - PREVIEW_SIZE} rows remaining.")
+                            st.rerun()
 
                         except Exception as e:
                             st.error(f"Error: {str(e)}")
@@ -453,7 +490,21 @@ with tab2:
                     else:
                         try:
                             scraper = adapter.create_scraper(google_api_key) if enrich_reviews else None
-                            df = df_upload.copy()
+
+                            # Work with existing dataframe from session state
+                            df_full = st.session_state.df_upload.copy()
+
+                            # Determine which rows need enrichment
+                            start_idx = st.session_state.get('preview_count', 0)
+                            total_rows = len(df_full)
+
+                            if start_idx >= total_rows:
+                                # All rows already enriched, re-enrich everything
+                                start_idx = 0
+                                st.info("Re-enriching all rows...")
+
+                            # Enrich only remaining rows (from start_idx to end)
+                            df = df_full.iloc[start_idx:].copy()
 
                             # Step 1: Google Reviews (if enabled)
                             if enrich_reviews:
@@ -500,10 +551,17 @@ with tab2:
                                     )
                                     status.update(label="✓ Emails generated", state="complete")
 
-                            # Save to session state
-                            st.session_state.df = df
+                            # Merge back into full dataframe
+                            for idx in df.index:
+                                df_full.loc[idx] = df.loc[idx]
+
+                            st.session_state.df_upload = df_full
+                            st.session_state.df = df_full  # Also update df for results display compatibility
                             st.session_state.results_ready = True
-                            st.success(f"✅ Enrichment complete! {len(df)} leads ready")
+                            st.session_state.preview_count = total_rows
+
+                            st.success(f"✅ Full enrichment complete! All {total_rows} rows enriched.")
+                            st.rerun()
 
                         except Exception as e:
                             st.error(f"Error: {str(e)}")
@@ -514,11 +572,21 @@ with tab2:
             st.error(f"Error reading CSV: {str(e)}")
 
 # ========== RESULTS DISPLAY ==========
-if st.session_state.df is not None:
+# Check both df (Search tab) and df_upload (Upload CSV tab)
+if 'df' in st.session_state and st.session_state.df is not None:
     st.markdown("---")
     st.subheader("📊 Results")
 
     df_display = st.session_state.df
+elif 'df_upload' in st.session_state and st.session_state.df_upload is not None:
+    st.markdown("---")
+    st.subheader("📊 Results")
+
+    df_display = st.session_state.df_upload
+else:
+    df_display = None
+
+if df_display is not None:
 
     # Show metrics
     col1, col2, col3 = st.columns(3)
