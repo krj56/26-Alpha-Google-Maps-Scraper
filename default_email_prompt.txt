@@ -16,10 +16,14 @@ Here is everything we know about this lead:
 
 Company: {company_name}
 Location: {company_address}
+Phone: {company_phone}
 Website: {website}
 Google Rating: {rating} ({review_count} reviews)
 Research Brief: {research_brief}
 LinkedIn: {linkedin_url}
+Facebook: {facebook_url}
+Instagram: {instagram_url}
+Twitter: {twitter_url}
 
 === PRODUCT/SERVICE ===
 {product_description}

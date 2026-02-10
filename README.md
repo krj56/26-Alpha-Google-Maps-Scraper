@@ -112,6 +112,25 @@ This is the most important step. You need a Google API key to access Google Maps
 
 ## How to Use
 
+### Option 0: Streamlit Frontend (Web UI)
+
+Run the web app locally:
+
+```bash
+pip3 install -r requirements.txt
+streamlit run app.py
+```
+
+Then open: `http://localhost:8501`
+
+If port `8501` is already in use:
+
+```bash
+streamlit run app.py --server.port 8502
+```
+
+Do not run `python3 app.py` directly. Streamlit apps must be started with `streamlit run`.
+
 ### Option 1: Search Mode (Find New Leads)
 
 Search Google Maps for businesses and save to CSV:
@@ -247,6 +266,12 @@ Make sure you:
 1. Created a `.env` file (not `.env.example`)
 2. Added your API key after the `=` sign
 3. Saved the file
+
+### "missing ScriptRunContext" warnings
+This happens when the app is started as a normal Python script. Use:
+```bash
+streamlit run app.py
+```
 
 ### "Could not find 'Business Name' column"
 Your CSV needs a column named either:

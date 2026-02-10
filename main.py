@@ -175,11 +175,15 @@ class EmailGenerator:
         return self.prompt_template.format(
             company_name=safe_val(row.get('Company Name', '')),
             company_address=safe_val(row.get('Company Address', '')),
+            company_phone=safe_val(row.get('Company Phone', '')),
             website=safe_val(row.get('Website', '')),
             rating=safe_val(row.get('Google Review Rating', '')),
             review_count=safe_val(row.get('Google Review Count', '')),
             research_brief=safe_val(row.get('Research Brief', '')),
             linkedin_url=safe_val(row.get('LinkedIn URL', '')),
+            facebook_url=safe_val(row.get('Facebook URL', '')),
+            instagram_url=safe_val(row.get('Instagram URL', '')),
+            twitter_url=safe_val(row.get('Twitter URL', '')),
             product_description=product_description
         )
 
@@ -207,10 +211,13 @@ class EmailGenerator:
 class GoogleMapsReviewScraper:
     """Scraper to enrich business data with Google Maps reviews."""
 
-    def __init__(self):
-        """Initialize the scraper with Google Maps API key."""
-        Config.validate()
-        self.api_key = Config.GOOGLE_MAPS_API_KEY
+    def __init__(self, api_key=None):
+        """Initialize the scraper with an explicit or configured Google Maps API key."""
+        if api_key:
+            self.api_key = api_key
+        else:
+            Config.validate()
+            self.api_key = Config.GOOGLE_MAPS_API_KEY
         self.error_log = []
         self.base_url = "https://places.googleapis.com/v1/places"
         self.session = requests.Session()
