@@ -390,10 +390,6 @@ with tab2:
 
             st.write(f"**Loaded:** {len(df_upload)} rows, {len(df_upload.columns)} columns")
 
-            # Display ALL rows
-            st.dataframe(st.session_state.df_upload, use_container_width=True)
-            st.info(f"💡 Showing all {len(df_upload)} rows. Use Preview to test enrichments on first 10 rows.")
-
             col_preview, col_run = st.columns(2)
 
             with col_preview:
