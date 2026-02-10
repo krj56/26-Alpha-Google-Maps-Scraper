@@ -200,30 +200,86 @@ with tab1:
 
     with col_preview:
         if st.button("🔍 Preview First 10", key="preview_search", use_container_width=True):
-            errors = validate_inputs(require_google_key=True, require_email_config=False)
+            errors = validate_inputs(require_google_key=True, require_email_config=enrich_emails)
             if errors:
                 for error in errors:
                     st.error(error)
             elif not search_query.strip():
                 st.error("Please enter a search query")
             else:
-                with st.spinner("Searching..."):
-                    try:
-                        # Create scraper
-                        scraper = adapter.create_scraper(google_api_key)
+                try:
+                    # Create scraper
+                    scraper = adapter.create_scraper(google_api_key)
 
-                        # Search (limited to preview size)
-                        df = adapter.search_places(scraper, search_query, min(PREVIEW_SIZE, max_results))
+                    # Step 1: Search (limited to 10 results)
+                    with st.status("🔍 Searching Google Maps...", expanded=True) as status:
+                        st.write(f"Query: {search_query} (preview: first 10)")
+                        df = adapter.search_places(scraper, search_query, PREVIEW_SIZE)
 
                         if df.empty:
-                            st.warning("No results found")
-                        else:
-                            st.session_state.df = df
-                            st.session_state.results_ready = False
-                            st.success(f"Found {len(df)} results (preview mode)")
+                            status.update(label="No results found", state="error")
+                            st.stop()
 
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+                        st.write(f"✓ Found {len(df)} results")
+                        status.update(label=f"✓ Search complete: {len(df)} results", state="complete")
+
+                    # Step 2: Google Reviews (if enabled)
+                    if enrich_reviews:
+                        with st.status("⭐ Enriching with Google reviews...", expanded=True) as status:
+                            progress_bar = st.progress(0)
+
+                            def update_progress(current, total):
+                                progress_bar.progress(current / total)
+                                st.write(f"Processing: {current}/{total}")
+
+                            df = adapter.enrich_with_reviews(scraper, df, update_progress)
+                            status.update(label="✓ Google reviews added", state="complete")
+
+                    # Step 3: Website & Social (if enabled)
+                    if enrich_website:
+                        with st.status("🌐 Enriching with website data...", expanded=True) as status:
+                            progress_bar = st.progress(0)
+
+                            def update_progress(current, total):
+                                progress_bar.progress(current / total)
+                                st.write(f"Processing: {current}/{total}")
+
+                            df = adapter.enrich_with_website_data(df, update_progress)
+                            status.update(label="✓ Website data added", state="complete")
+
+                    # Step 4: AI Emails (if enabled)
+                    if enrich_emails:
+                        with st.status("✉️ Generating personalized emails...", expanded=True) as status:
+                            progress_bar = st.progress(0)
+
+                            def update_progress(current, total):
+                                progress_bar.progress(current / total)
+                                st.write(f"Processing: {current}/{total}")
+
+                            # Create email generator
+                            generator = adapter.create_email_generator(
+                                llm_model,
+                                llm_api_key,
+                                adapter.DEFAULT_PROMPT_TEMPLATE
+                            )
+
+                            df = adapter.generate_emails(
+                                df,
+                                generator,
+                                product_description,
+                                update_progress
+                            )
+                            status.update(label="✓ Emails generated", state="complete")
+
+                    # Save to session state
+                    st.session_state.df = df
+                    st.session_state.results_ready = False
+                    st.success(f"✅ Preview complete! {len(df)} leads enriched")
+
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
 
     with col_run:
         if st.button("▶️ Run Full Enrichment", key="run_search", type="primary", use_container_width=True):
@@ -328,15 +384,75 @@ with tab2:
 
             with col_preview:
                 if st.button("🔍 Preview First 10", key="preview_upload", use_container_width=True):
-                    errors = validate_inputs(require_google_key=False, require_email_config=False)
+                    errors = validate_inputs(
+                        require_google_key=enrich_reviews,
+                        require_email_config=enrich_emails
+                    )
                     if errors:
                         for error in errors:
                             st.error(error)
                     else:
-                        # Just show first 10 rows without processing
-                        st.session_state.df = df_upload.head(PREVIEW_SIZE).copy()
-                        st.session_state.results_ready = False
-                        st.success(f"Preview: {len(st.session_state.df)} rows (no enrichment)")
+                        try:
+                            scraper = adapter.create_scraper(google_api_key) if enrich_reviews else None
+                            df = df_upload.head(PREVIEW_SIZE).copy()
+
+                            # Step 1: Google Reviews (if enabled)
+                            if enrich_reviews:
+                                with st.status("⭐ Enriching with Google reviews...", expanded=True) as status:
+                                    progress_bar = st.progress(0)
+
+                                    def update_progress(current, total):
+                                        progress_bar.progress(current / total)
+                                        st.write(f"Processing: {current}/{total}")
+
+                                    df = adapter.enrich_with_reviews(scraper, df, update_progress)
+                                    status.update(label="✓ Google reviews added", state="complete")
+
+                            # Step 2: Website & Social (if enabled)
+                            if enrich_website:
+                                with st.status("🌐 Enriching with website data...", expanded=True) as status:
+                                    progress_bar = st.progress(0)
+
+                                    def update_progress(current, total):
+                                        progress_bar.progress(current / total)
+                                        st.write(f"Processing: {current}/{total}")
+
+                                    df = adapter.enrich_with_website_data(df, update_progress)
+                                    status.update(label="✓ Website data added", state="complete")
+
+                            # Step 3: AI Emails (if enabled)
+                            if enrich_emails:
+                                with st.status("✉️ Generating personalized emails...", expanded=True) as status:
+                                    progress_bar = st.progress(0)
+
+                                    def update_progress(current, total):
+                                        progress_bar.progress(current / total)
+                                        st.write(f"Processing: {current}/{total}")
+
+                                    # Create email generator
+                                    generator = adapter.create_email_generator(
+                                        llm_model,
+                                        llm_api_key,
+                                        adapter.DEFAULT_PROMPT_TEMPLATE
+                                    )
+
+                                    df = adapter.generate_emails(
+                                        df,
+                                        generator,
+                                        product_description,
+                                        update_progress
+                                    )
+                                    status.update(label="✓ Emails generated", state="complete")
+
+                            # Save to session state
+                            st.session_state.df = df
+                            st.session_state.results_ready = False
+                            st.success(f"✅ Preview complete! {len(df)} leads enriched")
+
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
+                            import traceback
+                            st.code(traceback.format_exc())
 
             with col_run:
                 if st.button("▶️ Run Full Enrichment", key="run_upload", type="primary", use_container_width=True):
