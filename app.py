@@ -212,49 +212,44 @@ with tab1:
                     scraper = adapter.create_scraper(google_api_key)
 
                     # Step 1: Search (limited to 10 results)
-                    with st.status("🔍 Searching Google Maps...", expanded=True) as status:
-                        st.write(f"Query: {search_query} (preview: first 10)")
+                    with st.status(f"🔍 Searching for {search_query}...") as status:
                         df = adapter.search_places(scraper, search_query, PREVIEW_SIZE)
 
                         if df.empty:
                             status.update(label="No results found", state="error")
                             st.stop()
 
-                        st.write(f"✓ Found {len(df)} results")
-                        status.update(label=f"✓ Search complete: {len(df)} results", state="complete")
+                        status.update(label=f"✓ Found {len(df)} results", state="complete")
 
                     # Step 2: Google Reviews (if enabled)
                     if enrich_reviews:
-                        with st.status("⭐ Enriching with Google reviews...", expanded=True) as status:
+                        with st.status("⭐ Enriching with Google reviews...") as status:
                             progress_bar = st.progress(0)
 
                             def update_progress(current, total):
                                 progress_bar.progress(current / total)
-                                st.write(f"Processing: {current}/{total}")
 
                             df = adapter.enrich_with_reviews(scraper, df, update_progress)
                             status.update(label="✓ Google reviews added", state="complete")
 
                     # Step 3: Website & Social (if enabled)
                     if enrich_website:
-                        with st.status("🌐 Enriching with website data...", expanded=True) as status:
+                        with st.status("🌐 Enriching with website data...") as status:
                             progress_bar = st.progress(0)
 
                             def update_progress(current, total):
                                 progress_bar.progress(current / total)
-                                st.write(f"Processing: {current}/{total}")
 
                             df = adapter.enrich_with_website_data(df, update_progress)
                             status.update(label="✓ Website data added", state="complete")
 
                     # Step 4: AI Emails (if enabled)
                     if enrich_emails:
-                        with st.status("✉️ Generating personalized emails...", expanded=True) as status:
+                        with st.status("✉️ Generating personalized emails...") as status:
                             progress_bar = st.progress(0)
 
                             def update_progress(current, total):
                                 progress_bar.progress(current / total)
-                                st.write(f"Processing: {current}/{total}")
 
                             # Create email generator
                             generator = adapter.create_email_generator(
@@ -295,49 +290,44 @@ with tab1:
                     scraper = adapter.create_scraper(google_api_key)
 
                     # Step 1: Search
-                    with st.status("🔍 Searching Google Maps...", expanded=True) as status:
-                        st.write(f"Query: {search_query}")
+                    with st.status(f"🔍 Searching for {search_query}...") as status:
                         df = adapter.search_places(scraper, search_query, max_results)
 
                         if df.empty:
                             status.update(label="No results found", state="error")
                             st.stop()
 
-                        st.write(f"✓ Found {len(df)} results")
-                        status.update(label=f"✓ Search complete: {len(df)} results", state="complete")
+                        status.update(label=f"✓ Found {len(df)} results", state="complete")
 
                     # Step 2: Google Reviews (if enabled)
                     if enrich_reviews:
-                        with st.status("⭐ Enriching with Google reviews...", expanded=True) as status:
+                        with st.status("⭐ Enriching with Google reviews...") as status:
                             progress_bar = st.progress(0)
 
                             def update_progress(current, total):
                                 progress_bar.progress(current / total)
-                                st.write(f"Processing: {current}/{total}")
 
                             df = adapter.enrich_with_reviews(scraper, df, update_progress)
                             status.update(label="✓ Google reviews added", state="complete")
 
                     # Step 3: Website & Social (if enabled)
                     if enrich_website:
-                        with st.status("🌐 Enriching with website data...", expanded=True) as status:
+                        with st.status("🌐 Enriching with website data...") as status:
                             progress_bar = st.progress(0)
 
                             def update_progress(current, total):
                                 progress_bar.progress(current / total)
-                                st.write(f"Processing: {current}/{total}")
 
                             df = adapter.enrich_with_website_data(df, update_progress)
                             status.update(label="✓ Website data added", state="complete")
 
                     # Step 4: AI Emails (if enabled)
                     if enrich_emails:
-                        with st.status("✉️ Generating personalized emails...", expanded=True) as status:
+                        with st.status("✉️ Generating personalized emails...") as status:
                             progress_bar = st.progress(0)
 
                             def update_progress(current, total):
                                 progress_bar.progress(current / total)
-                                st.write(f"Processing: {current}/{total}")
 
                             # Create email generator
                             generator = adapter.create_email_generator(
@@ -398,36 +388,33 @@ with tab2:
 
                             # Step 1: Google Reviews (if enabled)
                             if enrich_reviews:
-                                with st.status("⭐ Enriching with Google reviews...", expanded=True) as status:
+                                with st.status("⭐ Enriching with Google reviews...") as status:
                                     progress_bar = st.progress(0)
 
                                     def update_progress(current, total):
                                         progress_bar.progress(current / total)
-                                        st.write(f"Processing: {current}/{total}")
 
                                     df = adapter.enrich_with_reviews(scraper, df, update_progress)
                                     status.update(label="✓ Google reviews added", state="complete")
 
                             # Step 2: Website & Social (if enabled)
                             if enrich_website:
-                                with st.status("🌐 Enriching with website data...", expanded=True) as status:
+                                with st.status("🌐 Enriching with website data...") as status:
                                     progress_bar = st.progress(0)
 
                                     def update_progress(current, total):
                                         progress_bar.progress(current / total)
-                                        st.write(f"Processing: {current}/{total}")
 
                                     df = adapter.enrich_with_website_data(df, update_progress)
                                     status.update(label="✓ Website data added", state="complete")
 
                             # Step 3: AI Emails (if enabled)
                             if enrich_emails:
-                                with st.status("✉️ Generating personalized emails...", expanded=True) as status:
+                                with st.status("✉️ Generating personalized emails...") as status:
                                     progress_bar = st.progress(0)
 
                                     def update_progress(current, total):
                                         progress_bar.progress(current / total)
-                                        st.write(f"Processing: {current}/{total}")
 
                                     # Create email generator
                                     generator = adapter.create_email_generator(
@@ -470,36 +457,33 @@ with tab2:
 
                             # Step 1: Google Reviews (if enabled)
                             if enrich_reviews:
-                                with st.status("⭐ Enriching with Google reviews...", expanded=True) as status:
+                                with st.status("⭐ Enriching with Google reviews...") as status:
                                     progress_bar = st.progress(0)
 
                                     def update_progress(current, total):
                                         progress_bar.progress(current / total)
-                                        st.write(f"Processing: {current}/{total}")
 
                                     df = adapter.enrich_with_reviews(scraper, df, update_progress)
                                     status.update(label="✓ Google reviews added", state="complete")
 
                             # Step 2: Website & Social (if enabled)
                             if enrich_website:
-                                with st.status("🌐 Enriching with website data...", expanded=True) as status:
+                                with st.status("🌐 Enriching with website data...") as status:
                                     progress_bar = st.progress(0)
 
                                     def update_progress(current, total):
                                         progress_bar.progress(current / total)
-                                        st.write(f"Processing: {current}/{total}")
 
                                     df = adapter.enrich_with_website_data(df, update_progress)
                                     status.update(label="✓ Website data added", state="complete")
 
                             # Step 3: AI Emails (if enabled)
                             if enrich_emails:
-                                with st.status("✉️ Generating personalized emails...", expanded=True) as status:
+                                with st.status("✉️ Generating personalized emails...") as status:
                                     progress_bar = st.progress(0)
 
                                     def update_progress(current, total):
                                         progress_bar.progress(current / total)
-                                        st.write(f"Processing: {current}/{total}")
 
                                     # Create email generator
                                     generator = adapter.create_email_generator(
